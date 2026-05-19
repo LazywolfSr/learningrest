@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>1899.12.30 00:00:00.000.018,=C:\Users\andi\Documents\Embarcadero\Studio\Projekte\Unit1.pas</Transaction>
+    <Transaction>2026.05.18 12:18:39.838,=C:\Users\andi\Documents\Embarcadero\Studio\Projekte\Unit5.pas</Transaction>
+    <Transaction>2026.05.18 12:19:10.666,Z:\Source\Delphi\Senat64\Test\calls\CallsUnit5.pas=C:\Users\andi\Documents\Embarcadero\Studio\Projekte\Unit5.pas</Transaction>
+    <Transaction>2026.05.18 12:19:10.666,Z:\Source\Delphi\Senat64\Test\calls\CallsUnit5.dfm=C:\Users\andi\Documents\Embarcadero\Studio\Projekte\Unit5.dfm</Transaction>
+    <Transaction>2026.05.18 12:19:27.553,Z:\Source\Delphi\Senat64\Test\calls\CallsProject1.dproj=C:\Users\andi\Documents\Embarcadero\Studio\Projekte\Project1.dproj</Transaction>
+    <Transaction>2026.05.18 12:20:31.323,=Z:\Source\Delphi\Senat64\Test\calls\Unit1.pas</Transaction>
+    <Transaction>2026.05.18 12:20:44.218,Z:\Source\Delphi\Senat64\Test\calls\S2CallsRepository.pas=Z:\Source\Delphi\Senat64\Test\calls\Unit1.pas</Transaction>
+    <Transaction>2026.05.18 12:21:01.099,=Z:\Source\Delphi\Senat64\Test\calls\Unit1.pas</Transaction>
+    <Transaction>2026.05.18 14:08:43.399,Z:\Source\Delphi\Senat64\Test\calls\S2CallsHttpServer.pas=Z:\Source\Delphi\Senat64\Test\calls\Unit1.pas</Transaction>
+    <Transaction>2026.05.19 14:32:09.165,=Z:\Source\Delphi\Senat64\Test\calls\Unbenannt1.md</Transaction>
+    <Transaction>2026.05.19 14:32:33.608,=Z:\Source\Delphi\Senat64\Test\calls\Unit1.pas</Transaction>
+    <Transaction>2026.05.19 14:33:37.367,=Z:\Source\Delphi\Senat64\Test\calls\Untitled1.htm</Transaction>
+    <Transaction>2026.05.19 14:34:14.290,=Z:\Source\Delphi\Senat64\Test\calls\OpenAPI.yaml</Transaction>
+  </Transactions>
+</BorlandProject>
