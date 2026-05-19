@@ -1,0 +1,14 @@
+name: s2anrufe
+description: REST-Lernprojekt – S2Anrufe Frontend
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
