@@ -1,0 +1,30 @@
+[Unit]
+Description=Yealink Call Logger (Flask + PostgreSQL + MQTT)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yealink
+WorkingDirectory=/opt/yealink_calls
+
+ExecStart=/usr/bin/python3 /opt/yealink_calls/yealink_calls.py
+
+Environment=YCL_PG_DSN=postgresql://yealink:yealink@127.0.0.1:5432/senatdb
+Environment=YCL_HOST=0.0.0.0
+Environment=YCL_PORT=8080
+Environment=YCL_PHONE_IP=192.168.0.49
+Environment=YCL_PHONE_USER=admin
+Environment=YCL_PHONE_PASS=admin
+
+Environment=MQTT_HOST=127.0.0.1
+Environment=MQTT_PORT=1883
+Environment=MQTT_TOPIC=Calls/Master/home
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
