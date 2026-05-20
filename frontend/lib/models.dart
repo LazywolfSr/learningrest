@@ -3,12 +3,14 @@ class Call {
   final String ts;
   final String remote;
   final String display;
+  final String searchName;
 
   const Call({
     required this.id,
     required this.ts,
     required this.remote,
     required this.display,
+    required this.searchName,
   });
 
   factory Call.fromJson(Map<String, dynamic> json) {
@@ -17,9 +19,7 @@ class Call {
       ts: json['ts'] as String? ?? '',
       remote: json['remote'] as String? ?? '',
       display: json['display'] as String? ?? '',
+      searchName: json['search_name'] as String? ?? '',
     );
   }
-
-  @override
-  String toString() => 'Call(id: $id, remote: $remote, display: $display)';
 }

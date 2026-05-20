@@ -8,8 +8,6 @@ void main() {
   runApp(const S2AnrufeApp());
 }
 
-// Globaler In-Memory-State für die Server-URL.
-// Bleibt während der App-Session erhalten.
 String gBaseUrl = 'http://192.168.42.43:8777';
 
 class S2AnrufeApp extends StatelessWidget {
@@ -49,9 +47,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _limitController = TextEditingController(text: '10');
+  final _searchController = TextEditingController();
   List<Call> _calls = [];
   bool _loading = false;
   String? _error;
+
+  List<Call> get _filtered {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _calls;
+    return _calls.where((c) {
+      return c.remote.toLowerCase().contains(q) ||
+          c.display.toLowerCase().contains(q) ||
+          c.searchName.toLowerCase().contains(q);
+    }).toList();
+  }
 
   Future<void> _fetchCalls() async {
     final limit = int.tryParse(_limitController.text.trim()) ?? 10;
@@ -59,12 +68,10 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _error = 'Limit muss zwischen 1 und 500 liegen.');
       return;
     }
-
     setState(() {
       _loading = true;
       _error = null;
     });
-
     try {
       final calls = await ApiService.fetchRecentCalls(gBaseUrl, limit: limit);
       setState(() {
@@ -84,19 +91,20 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
     );
-    // URL könnte sich geändert haben – neu zeichnen für die Anzeige
     setState(() {});
   }
 
   @override
   void dispose() {
     _limitController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final filtered = _filtered;
 
     return Scaffold(
       appBar: AppBar(
@@ -115,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Aktuelle Server-URL
+            // Server-URL
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -124,7 +132,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.dns_outlined, size: 16, color: cs.onSurfaceVariant),
+                  Icon(Icons.dns_outlined,
+                      size: 16, color: cs.onSurfaceVariant),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -188,21 +197,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icon(Icons.error_outline, color: cs.onErrorContainer),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: cs.onErrorContainer),
-                      ),
+                      child: Text(_error!,
+                          style: TextStyle(color: cs.onErrorContainer)),
                     ),
                   ],
                 ),
               ),
             ],
 
-            const SizedBox(height: 16),
-
+            // Suchfeld – nur anzeigen wenn Daten vorhanden
             if (_calls.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Suche nach Name oder Nummer…',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                        )
+                      : null,
+                  border: const OutlineInputBorder(),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
-                '${_calls.length} Anruf${_calls.length == 1 ? '' : 'e'}',
+                _searchController.text.isEmpty
+                    ? '${_calls.length} Anruf${_calls.length == 1 ? '' : 'e'}'
+                    : '${filtered.length} von ${_calls.length}',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -210,8 +240,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-            ],
+            ] else
+              const SizedBox(height: 16),
 
+            // Liste
             Expanded(
               child: _calls.isEmpty && !_loading && _error == null
                   ? Center(
@@ -220,12 +252,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(color: cs.onSurfaceVariant),
                       ),
                     )
-                  : ListView.separated(
-                      itemCount: _calls.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) =>
-                          CallTile(call: _calls[index]),
-                    ),
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Keine Treffer.',
+                            style: TextStyle(color: cs.onSurfaceVariant),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) =>
+                              CallTile(call: filtered[index]),
+                        ),
             ),
           ],
         ),
@@ -245,20 +284,30 @@ class CallTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       leading: CircleAvatar(
         backgroundColor: cs.primaryContainer,
-        child: Icon(Icons.phone_outlined,
-            color: cs.onPrimaryContainer, size: 20),
+        child:
+            Icon(Icons.phone_outlined, color: cs.onPrimaryContainer, size: 20),
       ),
       title: Text(
         call.display.isNotEmpty ? call.display : call.remote,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(
-        call.remote,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 12,
-          color: cs.onSurfaceVariant,
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            call.remote,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          if (call.searchName.isNotEmpty)
+            Text(
+              call.searchName,
+              style: TextStyle(fontSize: 11, color: cs.primary),
+            ),
+        ],
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -282,7 +331,8 @@ class CallTile extends StatelessWidget {
       final t =
           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
       if (callDay == today) return 'Heute $t';
-      if (callDay == today.subtract(const Duration(days: 1))) return 'Gestern $t';
+      if (callDay == today.subtract(const Duration(days: 1)))
+        return 'Gestern $t';
       return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year} $t';
     } catch (_) {
       return ts;
