@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'main.dart' show gBaseUrl;
+import 'prefs.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -41,11 +42,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     gBaseUrl = url;
+    Prefs.set('base_url', url);
     Navigator.pop(context);
   }
 
   void _reset() {
-    _urlController.text = 'http://192.168.42.43:8777';
+    _urlController.text = 'http://192.168.42.48:8777';
   }
 
   @override
@@ -71,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'Server-URL',
-                hintText: 'http://192.168.42.43:8777',
+                hintText: 'http://192.168.42.48:8777',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.link),
               ),

@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'api_service.dart';
 import 'models.dart';
 import 'settings_screen.dart';
+import 'prefs.dart';
 
 void main() {
   runApp(const S2AnrufeApp());
 }
 
-String gBaseUrl = 'http://192.168.42.43:8777';
+String gBaseUrl = 'http://192.168.42.48:8777';
 
 class S2AnrufeApp extends StatelessWidget {
   const S2AnrufeApp({super.key});
@@ -60,6 +61,16 @@ class _HomeScreenState extends State<HomeScreen> {
           c.display.toLowerCase().contains(q) ||
           c.searchName.toLowerCase().contains(q);
     }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Prefs.get('base_url').then((v) {
+      if (v != null && v.isNotEmpty) {
+        setState(() => gBaseUrl = v);
+      }
+    });
   }
 
   Future<void> _fetchCalls() async {

@@ -1,0 +1,18 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+postgres:
+  dsn: postgresql://yealink:yealink@127.0.0.1:5432/senatdb
+
+mqtt:
+  enabled: false
+  host: ""
+  port: 1883
+  topic: Calls/Master/home
+  client_id: yealink_bridge
+
+yealink:
+  phone_ip: 192.168.42.50
+  user: admin
+  password: admin

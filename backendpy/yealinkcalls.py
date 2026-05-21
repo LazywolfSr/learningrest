@@ -7,9 +7,11 @@ import urllib.parse
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
+import yaml
 import requests
 import psycopg
 import paho.mqtt.client as mqtt
+
 from psycopg.rows import dict_row
 from psycopg.errors import InsufficientPrivilege
 
@@ -19,22 +21,45 @@ from pydantic import BaseModel
 
 BERLIN = zoneinfo.ZoneInfo("Europe/Berlin")
 
-PG_DSN = os.environ.get("YCL_PG_DSN", "")
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+
+def load_config(filename: str = "config.yaml") -> dict:
+    if not os.path.exists(filename):
+        raise SystemExit(f"Config-Datei fehlt: {filename}")
+
+    with open(filename, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+cfg = load_config()
+
+LISTEN_HOST = cfg.get("server", {}).get("host", "0.0.0.0")
+LISTEN_PORT = int(cfg.get("server", {}).get("port", 8080))
+
+PG_DSN = cfg.get("postgres", {}).get("dsn", "")
 if not PG_DSN:
-    raise SystemExit("YCL_PG_DSN ist nicht gesetzt")
+    raise SystemExit("postgres.dsn ist nicht gesetzt")
 
-LISTEN_HOST = os.environ.get("YCL_HOST", "0.0.0.0")
-LISTEN_PORT = int(os.environ.get("YCL_PORT", "8080"))
+PHONE_IP = cfg.get("yealink", {}).get("phone_ip", "")
+PHONE_USER = cfg.get("yealink", {}).get("user", "")
+PHONE_PASS = cfg.get("yealink", {}).get("password", "")
 
-PHONE_IP = os.environ.get("YCL_PHONE_IP", "192.168.42.50")
-PHONE_USER = os.environ.get("YCL_PHONE_USER", "admin")
-PHONE_PASS = os.environ.get("YCL_PHONE_PASS", "admin")
+MQTT_CFG = cfg.get("mqtt", {})
+MQTT_ENABLED = bool(MQTT_CFG.get("enabled", False)) and bool(MQTT_CFG.get("host", ""))
 
-MQTT_HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
-MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "Calls/Master/home")
-MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "yealink_bridge")
+MQTT_HOST = MQTT_CFG.get("host", "")
+MQTT_PORT = int(MQTT_CFG.get("port", 1883))
+MQTT_TOPIC = MQTT_CFG.get("topic", "Calls/Master/home")
+MQTT_CLIENT_ID = MQTT_CFG.get("client_id", "yealink_bridge")
 
+
+# ---------------------------------------------------------------------------
+# DB Schema
+# ---------------------------------------------------------------------------
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS calls (
@@ -57,6 +82,11 @@ CREATE INDEX IF NOT EXISTS idx_calls_senderip ON calls(sender_ip);
 """
 
 
+# ---------------------------------------------------------------------------
+# DB Helpers
+# ---------------------------------------------------------------------------
+
+
 def get_conn() -> psycopg.Connection:
     return psycopg.connect(PG_DSN, autocommit=True)
 
@@ -66,7 +96,9 @@ def init_db() -> None:
         with get_conn() as con:
             con.execute(SCHEMA_SQL)
     except Exception as e:
-        if not isinstance(e, InsufficientPrivilege):
+        if isinstance(e, InsufficientPrivilege):
+            print("WARNUNG: Keine Rechte zum Anlegen/Ändern des Schemas.")
+        else:
             raise
 
 
@@ -74,8 +106,12 @@ def fmt_ts_for_ui(value: Any) -> str:
     try:
         if isinstance(value, datetime):
             return value.astimezone(BERLIN).strftime("%d.%m.%Y %H:%M:%S")
+        if isinstance(value, str):
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.astimezone(BERLIN).strftime("%d.%m.%Y %H:%M:%S")
     except Exception:
         pass
+
     return str(value)
 
 
@@ -149,6 +185,11 @@ def delete_call(call_id_int: int) -> None:
             cur.execute("DELETE FROM calls WHERE id = %s", (call_id_int,))
 
 
+# ---------------------------------------------------------------------------
+# MQTT
+# ---------------------------------------------------------------------------
+
+
 class MqttPublisher:
     def __init__(self):
         self._client = mqtt.Client(client_id=MQTT_CLIENT_ID)
@@ -169,18 +210,33 @@ class MqttPublisher:
             logging.warning("MQTT unerwartet getrennt rc=%d", rc)
 
     def connect(self):
+        if not MQTT_ENABLED:
+            print("MQTT: deaktiviert")
+            return
+
         self._client.reconnect_delay_set(min_delay=2, max_delay=30)
         self._client.connect_async(MQTT_HOST, MQTT_PORT, keepalive=30)
         self._client.loop_start()
 
     def publish(self, payload: str):
+        if not MQTT_ENABLED:
+            return
+
         if not self._connected:
             logging.warning("MQTT nicht verbunden – publish übersprungen")
             return
 
-        self._client.publish(MQTT_TOPIC, payload, qos=1, retain=False)
+        result = self._client.publish(MQTT_TOPIC, payload, qos=1, retain=False)
+
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            logging.warning("MQTT publish fehlgeschlagen rc=%d", result.rc)
+        else:
+            logging.info("MQTT → %s | %s", MQTT_TOPIC, payload)
 
     def disconnect(self):
+        if not MQTT_ENABLED:
+            return
+
         self._client.loop_stop()
         self._client.disconnect()
 
@@ -189,7 +245,7 @@ _mqtt = MqttPublisher()
 
 
 def _esc(s: str) -> str:
-    return s.replace("\\", "\\\\").replace(",", "\\,")
+    return (s or "").replace("\\", "\\\\").replace(",", "\\,")
 
 
 def _map_status(db_event: str) -> str:
@@ -200,6 +256,9 @@ def _map_status(db_event: str) -> str:
 
 
 def mqtt_publish_call(db_event: str, remote: str, display: str) -> None:
+    if not MQTT_ENABLED:
+        return
+
     if db_event in ("incoming_call", "outgoing_call"):
         parts = [
             _esc(remote),
@@ -213,8 +272,13 @@ def mqtt_publish_call(db_event: str, remote: str, display: str) -> None:
         ]
         _mqtt.publish(",".join(parts))
 
-    elif db_event in ("missed_call", "idle", "hangup"):
+    elif db_event in ("missed_call", "idle", "hangup", "disconnected"):
         _mqtt.publish("")
+
+
+# ---------------------------------------------------------------------------
+# Yealink CTI
+# ---------------------------------------------------------------------------
 
 
 def phone_auth():
@@ -226,6 +290,9 @@ def dial_via_phone(number: str) -> Tuple[bool, str]:
 
     if not number:
         return False, "Leere Nummer"
+
+    if not PHONE_IP:
+        return False, "Keine Yealink-IP konfiguriert"
 
     enc = urllib.parse.quote(number, safe="")
     url = f"http://{PHONE_IP}/servlet?key=number={enc}"
@@ -244,9 +311,14 @@ def dial_via_phone(number: str) -> Tuple[bool, str]:
 
 
 def hangup_via_phone() -> Tuple[bool, str]:
+    if not PHONE_IP:
+        return False, "Keine Yealink-IP konfiguriert"
+
     try:
         r = requests.get(
-            f"http://{PHONE_IP}/servlet?key=CALLEND", auth=phone_auth(), timeout=4
+            f"http://{PHONE_IP}/servlet?key=CALLEND",
+            auth=phone_auth(),
+            timeout=4,
         )
 
         if r.status_code == 200:
@@ -255,7 +327,9 @@ def hangup_via_phone() -> Tuple[bool, str]:
             return True, "CALLEND gesendet"
 
         r2 = requests.get(
-            f"http://{PHONE_IP}/servlet?key=ONHOOK", auth=phone_auth(), timeout=4
+            f"http://{PHONE_IP}/servlet?key=ONHOOK",
+            auth=phone_auth(),
+            timeout=4,
         )
 
         if r2.status_code == 200:
@@ -267,6 +341,11 @@ def hangup_via_phone() -> Tuple[bool, str]:
 
     except requests.RequestException as e:
         return False, f"Request fehlgeschlagen: {e}"
+
+
+# ---------------------------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------------------------
 
 
 class DialRequest(BaseModel):
@@ -283,8 +362,14 @@ app = FastAPI(
 def startup_event():
     init_db()
     _mqtt.connect()
+
     print(f"PostgreSQL: {PG_DSN}")
-    print(f"MQTT:       {MQTT_HOST}:{MQTT_PORT} → {MQTT_TOPIC}")
+    print(f"MQTT:       {'aktiv' if MQTT_ENABLED else 'deaktiviert'}")
+    if MQTT_ENABLED:
+        print(f"MQTT Ziel:  {MQTT_HOST}:{MQTT_PORT} → {MQTT_TOPIC}")
+
+    print(f"Yealink:    {PHONE_IP or '(nicht konfiguriert)'}")
+    print(f"REST:       http://{LISTEN_HOST}:{LISTEN_PORT}")
     print(f"Swagger:    http://{LISTEN_HOST}:{LISTEN_PORT}/docs")
 
 
@@ -298,6 +383,7 @@ def health():
     return {
         "ok": True,
         "time": datetime.now(BERLIN).strftime("%d.%m.%Y %H:%M:%S"),
+        "mqtt_enabled": MQTT_ENABLED,
     }
 
 
@@ -368,6 +454,10 @@ def index():
     return HTML
 
 
+# ---------------------------------------------------------------------------
+# Yealink Action URLs
+# ---------------------------------------------------------------------------
+
 HTM_RE = re.compile(r"^(?P<name>[A-Za-z0-9_]+)\.htm$")
 
 
@@ -405,7 +495,7 @@ def save_event(event_name: str, request: Request):
     elif event_name in ("missed_call",):
         db_event = "missed_call"
         direction = "in"
-    elif event_name in ("idle", "callend", "onhook"):
+    elif event_name in ("idle", "callend", "onhook", "disconnected"):
         db_event = "idle"
         direction = "state"
     else:
@@ -431,6 +521,10 @@ def save_event(event_name: str, request: Request):
 
     return PlainTextResponse("OK")
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
